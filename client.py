@@ -3,6 +3,7 @@ import logging
 import socket
 import time
 
+from protocol import _recv_exactly, serialize_dict_to_bytes
 from server import PATH_NAME
 
 logging.basicConfig(level=logging.DEBUG)
@@ -33,10 +34,7 @@ class Client:
         header = self.socket.recv(4)
 
     def request(self, input_dict: dict):
-        payload = json.dumps(input_dict).encode("utf-8")
-        length = len(payload)
-        header = length.to_bytes(4, byteorder="big")
-        message = header + payload
+        message = serialize_dict_to_bytes(input_dict)
         if not self.socket:
             raise RuntimeError("Socket is not connected")
         try:
@@ -54,11 +52,26 @@ class Client:
     def receive(self):
         if not self.socket:
             raise RuntimeError("Socket is not connected")
-        return self._receive_message()
+        header = _recv_exactly(self.socket, 4)
+        payload_size = int.from_bytes(header, byteorder="big")
+        full_payload = _recv_exactly(self.socket, payload_size)
+        json_string = full_payload.decode()
+        return json.loads(json_string)
 
 
 if __name__ == "__main__":
     runner_client = Client(PATH_NAME)
     runner_client.connect()
-    time.sleep(2)
     runner_client.request({"Operation": "add", "a": 5, "b": 15, "c": 18})
+
+    print(runner_client.receive())
+
+    runner_client.request({"Operation": "add", "a": 10, "b": 20})
+
+    print(runner_client.receive())
+
+    runner_client.request({"Operation": "add", "a": 100, "b": 200})
+
+    print(runner_client.receive())
+
+    runner_client.close()

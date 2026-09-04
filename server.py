@@ -4,6 +4,8 @@ import logging
 import os
 import socket
 
+from protocol import _recv_exactly, serialize_dict_to_bytes
+
 PATH_NAME = "/tmp/engine_v1.sock"
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -41,28 +43,32 @@ class Server:
             while True:
                 try:
                     received_message = self._receive_message(conn)
+                    print(f"received_message is: {received_message}")
+                    response = self._process_request(received_message)
+                    conn.sendall(serialize_dict_to_bytes(response))
+                    print("Response sent successfully")
                 except ConnectionError:
                     break
-                print(f"received_message is: {received_message}")
+
+    def _process_request(self, incoming: dict):
+        result = 0
+        match incoming["Operation"]:
+            case "add":
+                for k, v in incoming.items():
+                    if k != "Operation":
+                        result += v
+            case "multiply":
+                for k, v in incoming.items():
+                    if k != "Operation":
+                        result *= v
+        return {"result": result}
 
     def _receive_message(self, conn):
-        header = self._recv_exactly(conn, 4)
+        header = _recv_exactly(conn, 4)
         payload_size = int.from_bytes(header, byteorder="big")
-        full_payload = self._recv_exactly(conn, payload_size)
+        full_payload = _recv_exactly(conn, payload_size)
         json_string = full_payload.decode()
         return json.loads(json_string)
-
-    def _recv_exactly(self, conn, size):
-        data = bytearray()
-
-        while len(data) < size:
-            # conn.recv is blocking, so program waits here until client sends a message.
-            chunk = conn.recv(size - len(data))
-            logger.info("Received %d bytes", len(chunk))
-            if chunk == b"":
-                raise ConnectionError("Connection closed by peer")
-            data.extend(chunk)
-        return bytes(data)
 
 
 if __name__ == "__main__":
